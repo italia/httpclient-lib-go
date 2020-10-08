@@ -1,4 +1,4 @@
-module github.com/italia/httpclient-lib
+module github.com/italia/httpclient-lib-go
 
 go 1.14
 
