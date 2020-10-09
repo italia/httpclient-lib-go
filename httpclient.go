@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	version "github.com/italia/developers-italia-backend/crawler/version"
 	log "github.com/sirupsen/logrus"
 	"github.com/tomnomnom/linkheader"
 )
@@ -51,8 +50,14 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 			req.Header.Add(k, v)
 		}
 
+		// get version from headers and fallback to local version
+		version := "0.0.1_local"
+		if headers["version"] != "" {
+			version := headers["version"]
+		}
+
 		// Set special user agent for bot. Note: in github reqs the User-Agent must be set.
-		req.Header.Add("User-Agent", userAgent+"/"+version.VERSION)
+		req.Header.Add("User-Agent", userAgent+"/"+version)
 
 		// Perform the request.
 		resp, err := client.Do(req)
