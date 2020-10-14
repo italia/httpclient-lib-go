@@ -96,3 +96,67 @@ func TestGetUrlWithHeadersResponse(t *testing.T) {
 		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-PowOfTwo"), "4")
 	}
 }
+
+// TestPostURL should test if a getUrl to a valid http resource will end without errors.
+func TestPostURL(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
+	defer ts.Close()
+
+	resp, _ := PostURL(ts.URL, nil, nil)
+	r := "{\"data\": \"example data\"}"
+	if string(resp.Body) != r && resp.Status.Code == 200 {
+		t.Errorf("Call was incorrect, got: %s, want: %v.", resp.Body, r)
+	}
+}
+
+// TestIncorrectProtocolUrl should test if a getUrl to incorrect protocol url will fail.
+func TestPostIncorrectProtocolUrl(t *testing.T) {
+	resp, err := PostURL("hktp://incorrectprotocol.url", nil, nil)
+
+	if err == nil && resp.Status.Code != -1 {
+		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
+	}
+}
+
+// TestInexistentUrl should test if a getUrl to inexistent url will fail.
+func TestPostInexistentUrl(t *testing.T) {
+	resp, err := PostURL("http://inexistent.url", nil, nil)
+	if err == nil && resp.Status.Code == -1 {
+		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
+	}
+}
+
+// TestEmptyResponse should test if a getUrl to a valid http resource with empty response will
+// end without errors. Not really useful for getUrl(), use it as example.
+func TestPostEmptyResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerEmpty))
+	defer ts.Close()
+
+	resp, _ := PostURL(ts.URL, nil, nil)
+	r := ""
+	if string(resp.Body) != r {
+		t.Errorf("TestEmptyCall was incorrect, got: %s, want: %v.", string(resp.Body), r)
+	}
+}
+
+// TestPostUrlWithDelayResponse getUrl test with 10 seconds response time.
+func TestPostUrlWithDelayResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoListWithDelay))
+	defer ts.Close()
+
+	resp, _ := PostURL(ts.URL, nil, nil)
+	if resp.Body != nil {
+		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %v.", string(resp.Body), nil)
+	}
+}
+
+// TestPostUrlWithHeadersResponse getUrl test with headers in return.
+func TestPostUrlWithHeadersResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerHeaderInResponse))
+	defer ts.Close()
+
+	resp, _ := PostURL(ts.URL, nil, nil)
+	if resp.Headers.Get("X-PowOfTwo") != "4" {
+		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-PowOfTwo"), "4")
+	}
+}
