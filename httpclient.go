@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"io"
 	"math"
 	"net/http"
 	"time"
@@ -20,9 +21,24 @@ const (
 	userAgent = "Golang_italia_backend_bot"
 )
 
+// get version from headers and fallback to local version
+var version = "0.0.1_local"
+
 // GetURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
+	return Request(URL, "GET", headers, nil)
+}
+
+// PostURL retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+func PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return Request(URL, "POST", headers, body)
+}
+
+// Request retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+func Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
 	expBackoffAttempts := 0
 	const timeout = 60 * time.Second
 	const maxBackOffAttempts = 8 // 2 minutes.
@@ -34,9 +50,8 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 	}
 
 	for expBackoffAttempts < maxBackOffAttempts {
-		log.Tracef("attempt %d for %s", expBackoffAttempts, URL)
 
-		req, err := http.NewRequest("GET", URL, nil)
+		req, err := http.NewRequest(verb, URL, body)
 		if err != nil {
 			return HTTPResponse{
 				Body:    nil,
@@ -50,8 +65,6 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 			req.Header.Add(k, v)
 		}
 
-		// get version from headers and fallback to local version
-		version := "0.0.1_local"
 		if headers["version"] != "" {
 			version = headers["version"]
 		}
@@ -70,7 +83,7 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 		}
 
 		// Check if the request results in http OK.
-		if resp.StatusCode == http.StatusOK {
+		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			return statusOK(resp)
 		}
 
@@ -105,11 +118,6 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 				}, err
 			}
 		}
-
-		defer resp.Body.Close()
-		log.Errorf("Unknown http status code: %s - Resource: %s", resp.Status, URL)
-		// increment attempts
-		expBackoffAttempts++
 	}
 
 	// Generic invalid status code.
