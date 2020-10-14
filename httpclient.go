@@ -83,12 +83,7 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 		}
 
 		// Check if the request results in http OK.
-		if resp.StatusCode == http.StatusOK {
-			return statusOK(resp)
-		}
-
-		// Check if the request results in http OK.
-		if resp.StatusCode == http.StatusCreated {
+		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			return statusOK(resp)
 		}
 
