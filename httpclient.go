@@ -17,13 +17,6 @@ type HTTPResponse struct {
 	Headers http.Header
 }
 
-const (
-	userAgent = "Golang_italia_backend_bot"
-)
-
-// get version from headers and fallback to local version
-var version = "0.0.1_local"
-
 // GetURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
@@ -64,13 +57,6 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 		for k, v := range headers {
 			req.Header.Add(k, v)
 		}
-
-		if headers["version"] != "" {
-			version = headers["version"]
-		}
-
-		// Set special user agent for bot. Note: in github reqs the User-Agent must be set.
-		req.Header.Add("User-Agent", userAgent+"/"+version)
 
 		// Perform the request.
 		resp, err := client.Do(req)
