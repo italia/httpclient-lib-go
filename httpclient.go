@@ -122,6 +122,8 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 				}, err
 			}
 		}
+
+		expBackoffAttempts += 1
 	}
 
 	// Generic invalid status code.
