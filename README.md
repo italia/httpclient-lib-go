@@ -3,7 +3,7 @@
 [![Join the #publiccode channel](https://img.shields.io/badge/Slack%20channel-%23publiccode-blue.svg?logo=slack)](https://developersitalia.slack.com/messages/CAM3F785T)
 [![Get invited](https://slack.developers.italia.it/badge.svg)](https://slack.developers.italia.it/)
 
-This is a Go comnmon lib for [crawler](https://github.com/italia/developers-italia-backend), [publiccode-parser-go](https://github.com/italia/publiccode-parser-go) and [publiccode-validator](https://github.com/italia/publiccode-validator)
+This is a Go common lib for [crawler](https://github.com/italia/developers-italia-backend), [publiccode-parser-go](https://github.com/italia/publiccode-parser-go) and [publiccode-validator](https://github.com/italia/publiccode-validator)
 
 publiccode.yml is an international standard for describing public software. It is expected to be published in the root of open source repositories. This parser performs syntactic and semantic validation according to the official spec.
 
