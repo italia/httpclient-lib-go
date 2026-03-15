@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+// mockDoer is a test implementation of HTTPDoer.
+type mockDoer struct {
+	resp *http.Response
+	err  error
+	got  *http.Request
+}
+
+func (m *mockDoer) Do(req *http.Request) (*http.Response, error) {
+	m.got = req
+	return m.resp, m.err
+}
+
 // handlerOneRepoList print on ResponseWriter one element of response list.
 func handlerOneRepoList(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(w, "{\"data\": \"example data\"}")
@@ -158,5 +170,73 @@ func TestPostUrlWithHeadersResponse(t *testing.T) {
 	resp, _ := PostURL(ts.URL, nil, nil)
 	if resp.Headers.Get("X-PowOfTwo") != "4" {
 		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-PowOfTwo"), "4")
+	}
+}
+
+// TestNewClientNil verifies that NewClient(nil) returns a working client.
+func TestNewClientNil(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
+	defer ts.Close()
+
+	client := NewClient(nil)
+	resp, err := client.GetURL(ts.URL, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status.Code != 200 {
+		t.Errorf("got status %d, want 200", resp.Status.Code)
+	}
+}
+
+// TestNewClientCustomDoer verifies that a custom HTTPDoer is actually used.
+func TestNewClientCustomDoer(t *testing.T) {
+	rec := httptest.NewRecorder()
+	fmt.Fprint(rec, `{"injected":true}`)
+	doer := &mockDoer{resp: &http.Response{
+		StatusCode: 200,
+		Status:     "200 OK",
+		Header:     http.Header{"X-Custom": []string{"yes"}},
+		Body:       rec.Result().Body,
+	}}
+
+	client := NewClient(doer)
+	resp, err := client.GetURL("http://example.com", map[string]string{"Authorization": "Bearer token"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doer.got == nil {
+		t.Fatal("custom doer was not called")
+	}
+	if doer.got.Header.Get("Authorization") != "Bearer token" {
+		t.Errorf("header not forwarded, got: %s", doer.got.Header.Get("Authorization"))
+	}
+	if resp.Headers.Get("X-Custom") != "yes" {
+		t.Errorf("response header not returned, got: %s", resp.Headers.Get("X-Custom"))
+	}
+}
+
+// TestClientGetURL tests Client.GetURL against a real test server.
+func TestClientGetURL(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
+	defer ts.Close()
+
+	client := NewClient(nil)
+	resp, _ := client.GetURL(ts.URL, nil)
+	r := "{\"data\": \"example data\"}"
+	if string(resp.Body) != r && resp.Status.Code == 200 {
+		t.Errorf("got: %s, want: %v.", resp.Body, r)
+	}
+}
+
+// TestClientPostURL tests Client.PostURL against a real test server.
+func TestClientPostURL(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
+	defer ts.Close()
+
+	client := NewClient(nil)
+	resp, _ := client.PostURL(ts.URL, nil, nil)
+	r := "{\"data\": \"example data\"}"
+	if string(resp.Body) != r && resp.Status.Code == 200 {
+		t.Errorf("got: %s, want: %v.", resp.Body, r)
 	}
 }
