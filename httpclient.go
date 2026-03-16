@@ -10,6 +10,28 @@ import (
 	"github.com/tomnomnom/linkheader"
 )
 
+// HTTPDoer is the interface for the underlying HTTP client. *http.Client satisfies it.
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// Client wraps an HTTPDoer and exposes GetURL, PostURL and Request methods.
+type Client struct {
+	httpDoer HTTPDoer
+}
+
+// NewClient returns a Client that uses doer as the underlying HTTP client.
+// If doer is nil, a default *http.Client with a 60-second timeout is used.
+func NewClient(doer HTTPDoer) *Client {
+	if doer == nil {
+		doer = &http.Client{Timeout: 60 * time.Second}
+	}
+	return &Client{httpDoer: doer}
+}
+
+// defaultClient is used by the package-level functions for backwards compatibility.
+var defaultClient = NewClient(nil)
+
 // HTTPResponse wraps body, Status and Headers from the http.Response.
 type HTTPResponse struct {
 	Body    []byte
@@ -19,28 +41,22 @@ type HTTPResponse struct {
 
 // GetURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
-	return Request(URL, "GET", headers, nil)
+func (c *Client) GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
+	return c.Request(URL, "GET", headers, nil)
 }
 
 // PostURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-func PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
-	return Request(URL, "POST", headers, body)
+func (c *Client) PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return c.Request(URL, "POST", headers, body)
 }
 
 // Request retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-func Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+func (c *Client) Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
 	expBackoffAttempts := 0
-	const timeout = 60 * time.Second
 	const maxBackOffAttempts = 8 // 2 minutes.
 	var err error
-
-	client := http.Client{
-		// Request Timeout.
-		Timeout: timeout,
-	}
 
 	for expBackoffAttempts < maxBackOffAttempts {
 
@@ -59,7 +75,7 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 		}
 
 		// Perform the request.
-		resp, err := client.Do(req)
+		resp, err := c.httpDoer.Do(req)
 		if err != nil {
 			return HTTPResponse{
 				Body:    nil,
@@ -118,6 +134,24 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 		Status:  ResponseStatus{Text: "Invalid Status Code: " + URL, Code: -1},
 		Headers: nil,
 	}, err
+}
+
+// GetURL retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
+	return defaultClient.Request(URL, "GET", headers, nil)
+}
+
+// PostURL retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+func PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return defaultClient.Request(URL, "POST", headers, body)
+}
+
+// Request retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+func Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return defaultClient.Request(URL, verb, headers, body)
 }
 
 // HeaderLink parse the Github Header Link to "next"/"last"/"first"/"prev" link of repositories.
