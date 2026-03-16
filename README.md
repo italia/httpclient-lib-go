@@ -7,6 +7,36 @@ This is a Go common lib for [crawler](https://github.com/italia/developers-itali
 
 publiccode.yml is an international standard for describing public software. It is expected to be published in the root of open source repositories. This parser performs syntactic and semantic validation according to the official spec.
 
+## Usage
+
+### Package-level functions
+
+Quickest way to get started:
+
+```go
+resp, err := httpclient.GetURL("https://example.com", nil)
+resp, err := httpclient.PostURL("https://example.com", headers, body)
+resp, err := httpclient.Request("https://example.com", "PUT", headers, body)
+```
+
+### Custom HTTP client
+
+If you need more control (eg. custom transport, shared client, test doubles) you can instantiate a `Client` directly via `NewClient`:
+
+```go
+httpClient := &http.Client{
+    Timeout:   30 * time.Second,
+    Transport: myCustomTransport,
+}
+client := httpclient.NewClient(httpClient)
+
+resp, err := client.GetURL("https://example.com", nil)
+resp, err := client.PostURL("https://example.com", headers, body)
+resp, err := client.Request("https://example.com", "PUT", headers, body)
+```
+
+Anything implementing the `HTTPDoer` interface (`Do(*http.Request) (*http.Response, error)`) works.
+
 ## Contributing
 
 Contributing is always appreciated.
