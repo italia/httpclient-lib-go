@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -55,8 +56,29 @@ func statusNotFound(resp *http.Response) (HTTPResponse, error) {
 	}, fmt.Errorf("not found")
 }
 
+// sleepWithContext sleeps for d, but returns early if ctx is explicitly cancelled.
+// A context deadline expiring does not interrupt the sleep: deadlines apply to
+// individual HTTP requests (via http.Client.Timeout or http.NewRequestWithContext),
+// not to retry waits dictated by the server via Retry-After.
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	start := time.Now()
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		if ctx.Err() == context.Canceled {
+			return ctx.Err()
+		}
+		// DeadlineExceeded: sleep for the remaining duration.
+		if remaining := d - time.Since(start); remaining > 0 {
+			time.Sleep(remaining)
+		}
+		return nil
+	}
+}
+
 // statusTooManyRequests returns an HTTPResponse with the data from response.
-func statusTooManyRequests(resp *http.Response, expBackoffAttempts int) (int, error) {
+func statusTooManyRequests(ctx context.Context, resp *http.Response, expBackoffAttempts int) (int, error) {
 	// If Retry-after Header is set, use the header value.
 	if retryAfter := resp.Header.Get(headerRetryAfter); retryAfter != "" {
 		log.Infof("Waiting: %s seconds. (The value of %s)", retryAfter, headerRetryAfter)
@@ -64,7 +86,9 @@ func statusTooManyRequests(resp *http.Response, expBackoffAttempts int) (int, er
 		if err != nil {
 			log.Warn(err)
 		}
-		time.Sleep(time.Second * time.Duration(secondsAfterRetry))
+		if err := sleepWithContext(ctx, time.Second*time.Duration(secondsAfterRetry)); err != nil {
+			return expBackoffAttempts, err
+		}
 		return expBackoffAttempts, nil
 	}
 	// Calculate ExpBackoff
@@ -72,13 +96,15 @@ func statusTooManyRequests(resp *http.Response, expBackoffAttempts int) (int, er
 	// Perform a backoff sleep time.
 	sleep := time.Duration(expBackoffWait) * time.Second
 	log.Infof("Rate limit reached, sleep %v \n", sleep)
-	time.Sleep(sleep)
+	if err := sleepWithContext(ctx, sleep); err != nil {
+		return expBackoffAttempts, err
+	}
 
 	return expBackoffAttempts + 1, nil
 }
 
 // statusForbidden returns an HTTPResponse with the data from response.
-func statusForbidden(resp *http.Response, expBackoffAttempts int) (int, error) {
+func statusForbidden(ctx context.Context, resp *http.Response, expBackoffAttempts int) (int, error) {
 	// If Retry-after is set, use that value.
 	if retryAfter := resp.Header.Get(headerRetryAfter); retryAfter != "" {
 		log.Infof("Waiting: %s seconds. (The value of %s)", retryAfter, headerRetryAfter)
@@ -86,7 +112,9 @@ func statusForbidden(resp *http.Response, expBackoffAttempts int) (int, error) {
 		if err != nil {
 			log.Warn(err)
 		}
-		time.Sleep(time.Second * time.Duration(secondsAfterRetry))
+		if err := sleepWithContext(ctx, time.Second*time.Duration(secondsAfterRetry)); err != nil {
+			return expBackoffAttempts, err
+		}
 		return expBackoffAttempts, nil
 	}
 
@@ -109,7 +137,9 @@ func statusForbidden(resp *http.Response, expBackoffAttempts int) (int, error) {
 			}
 			secondsAfterRetry := int64(retryEpoch) - time.Now().Unix()
 			log.Infof("Waiting %s seconds for %s. (The difference between header %s and time.Now())", strconv.FormatInt(secondsAfterRetry, 10), headerRateReset, reset)
-			time.Sleep(time.Second * time.Duration(secondsAfterRetry))
+			if err := sleepWithContext(ctx, time.Second*time.Duration(secondsAfterRetry)); err != nil {
+				return expBackoffAttempts, err
+			}
 			return expBackoffAttempts, nil
 		}
 	}
