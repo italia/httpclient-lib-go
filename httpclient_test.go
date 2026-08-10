@@ -1,4 +1,4 @@
-package httpclient
+package httpclient_test
 
 import (
 	"fmt"
@@ -6,7 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	httpclient "github.com/italia/httpclient-lib-go"
 )
+
+const exampleData = `{"data": "example data"}`
 
 // mockDoer is a test implementation of HTTPDoer.
 type mockDoer struct {
@@ -17,49 +21,53 @@ type mockDoer struct {
 
 func (m *mockDoer) Do(req *http.Request) (*http.Response, error) {
 	m.got = req
+
 	return m.resp, m.err
 }
 
 // handlerOneRepoList print on ResponseWriter one element of response list.
 func handlerOneRepoList(w http.ResponseWriter, _ *http.Request) {
-	fmt.Fprint(w, "{\"data\": \"example data\"}")
+	fmt.Fprint(w, exampleData)
 }
 
 // handlerOneRepoListWithDelay print on ResponseWriter one element of response.
 // with delay of 60 seconds.
 func handlerOneRepoListWithDelay(w http.ResponseWriter, _ *http.Request) {
 	time.Sleep(60 * time.Second)
-	fmt.Fprint(w, "{\"data\": \"example data\"}")
+	fmt.Fprint(w, exampleData)
 }
 
-// handlerEmpty print an empty response
+// handlerEmpty print an empty response.
 func handlerEmpty(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprint(w, "")
 }
 
 // handlerHeaderInResponse print something and return a specific Header.
 func handlerHeaderInResponse(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Add("X-PowOfTwo", "4")
-	w.Header().Write(w)
+	w.Header().Add("X-Powoftwo", "4")
+	_ = w.Header().Write(w)
 
-	fmt.Fprint(w, "{\"data\": \"example data\"}")
+	fmt.Fprint(w, exampleData)
 }
 
 // TestGetUrl should test if a getUrl to a valid http resource will end without errors.
 func TestGetUrl(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
 	defer ts.Close()
 
-	resp, _ := GetURL(ts.URL, nil)
-	r := "{\"data\": \"example data\"}"
-	if string(resp.Body) != r && resp.Status.Code == 200 {
-		t.Errorf("Call was incorrect, got: %s, want: %v.", resp.Body, r)
+	resp, _ := httpclient.GetURL(ts.URL, nil)
+	if string(resp.Body) != exampleData && resp.Status.Code == http.StatusOK {
+		t.Errorf("Call was incorrect, got: %s, want: %v.", resp.Body, exampleData)
 	}
 }
 
 // TestIncorrectProtocolUrl should test if a getUrl to incorrect protocol url will fail.
 func TestIncorrectProtocolUrl(t *testing.T) {
-	resp, err := GetURL("hktp://incorrectprotocol.url", nil)
+	t.Parallel()
+
+	resp, err := httpclient.GetURL("hktp://incorrectprotocol.url", nil)
 
 	if err == nil && resp.Status.Code != -1 {
 		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
@@ -68,7 +76,9 @@ func TestIncorrectProtocolUrl(t *testing.T) {
 
 // TestInexistentUrl should test if a getUrl to inexistent url will fail.
 func TestInexistentUrl(t *testing.T) {
-	resp, err := GetURL("http://inexistent.url", nil)
+	t.Parallel()
+
+	resp, err := httpclient.GetURL("http://inexistent.url", nil)
 	if err == nil && resp.Status.Code == -1 {
 		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
 	}
@@ -77,10 +87,13 @@ func TestInexistentUrl(t *testing.T) {
 // TestEmptyResponse should test if a getUrl to a valid http resource with empty response will
 // end without errors. Not really useful for getUrl(), use it as example.
 func TestEmptyResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerEmpty))
 	defer ts.Close()
 
-	resp, _ := GetURL(ts.URL, nil)
+	resp, _ := httpclient.GetURL(ts.URL, nil)
+
 	r := ""
 	if string(resp.Body) != r {
 		t.Errorf("TestEmptyCall was incorrect, got: %s, want: %v.", string(resp.Body), r)
@@ -89,10 +102,12 @@ func TestEmptyResponse(t *testing.T) {
 
 // TestGetUrlWithDelayResponse getUrl test with 10 seconds response time.
 func TestGetUrlWithDelayResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoListWithDelay))
 	defer ts.Close()
 
-	resp, _ := GetURL(ts.URL, nil)
+	resp, _ := httpclient.GetURL(ts.URL, nil)
 	if resp.Body != nil {
 		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %v.", string(resp.Body), nil)
 	}
@@ -100,30 +115,35 @@ func TestGetUrlWithDelayResponse(t *testing.T) {
 
 // TestGetUrlWithHeadersResponse getUrl test with headers in return.
 func TestGetUrlWithHeadersResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerHeaderInResponse))
 	defer ts.Close()
 
-	resp, _ := GetURL(ts.URL, nil)
-	if resp.Headers.Get("X-PowOfTwo") != "4" {
-		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-PowOfTwo"), "4")
+	resp, _ := httpclient.GetURL(ts.URL, nil)
+	if resp.Headers.Get("X-Powoftwo") != "4" {
+		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-Powoftwo"), "4")
 	}
 }
 
 // TestPostURL should test if a getUrl to a valid http resource will end without errors.
 func TestPostURL(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
 	defer ts.Close()
 
-	resp, _ := PostURL(ts.URL, nil, nil)
-	r := "{\"data\": \"example data\"}"
-	if string(resp.Body) != r && resp.Status.Code == 200 {
-		t.Errorf("Call was incorrect, got: %s, want: %v.", resp.Body, r)
+	resp, _ := httpclient.PostURL(ts.URL, nil, nil)
+	if string(resp.Body) != exampleData && resp.Status.Code == http.StatusOK {
+		t.Errorf("Call was incorrect, got: %s, want: %v.", resp.Body, exampleData)
 	}
 }
 
 // TestIncorrectProtocolUrl should test if a getUrl to incorrect protocol url will fail.
 func TestPostIncorrectProtocolUrl(t *testing.T) {
-	resp, err := PostURL("hktp://incorrectprotocol.url", nil, nil)
+	t.Parallel()
+
+	resp, err := httpclient.PostURL("hktp://incorrectprotocol.url", nil, nil)
 
 	if err == nil && resp.Status.Code != -1 {
 		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
@@ -132,7 +152,9 @@ func TestPostIncorrectProtocolUrl(t *testing.T) {
 
 // TestInexistentUrl should test if a getUrl to inexistent url will fail.
 func TestPostInexistentUrl(t *testing.T) {
-	resp, err := PostURL("http://inexistent.url", nil, nil)
+	t.Parallel()
+
+	resp, err := httpclient.PostURL("http://inexistent.url", nil, nil)
 	if err == nil && resp.Status.Code == -1 {
 		t.Errorf("TestInexistentUrlCall was incorrect, got error: %v", err)
 	}
@@ -141,10 +163,13 @@ func TestPostInexistentUrl(t *testing.T) {
 // TestEmptyResponse should test if a getUrl to a valid http resource with empty response will
 // end without errors. Not really useful for getUrl(), use it as example.
 func TestPostEmptyResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerEmpty))
 	defer ts.Close()
 
-	resp, _ := PostURL(ts.URL, nil, nil)
+	resp, _ := httpclient.PostURL(ts.URL, nil, nil)
+
 	r := ""
 	if string(resp.Body) != r {
 		t.Errorf("TestEmptyCall was incorrect, got: %s, want: %v.", string(resp.Body), r)
@@ -153,10 +178,12 @@ func TestPostEmptyResponse(t *testing.T) {
 
 // TestPostUrlWithDelayResponse getUrl test with 10 seconds response time.
 func TestPostUrlWithDelayResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoListWithDelay))
 	defer ts.Close()
 
-	resp, _ := PostURL(ts.URL, nil, nil)
+	resp, _ := httpclient.PostURL(ts.URL, nil, nil)
 	if resp.Body != nil {
 		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %v.", string(resp.Body), nil)
 	}
@@ -164,52 +191,65 @@ func TestPostUrlWithDelayResponse(t *testing.T) {
 
 // TestPostUrlWithHeadersResponse getUrl test with headers in return.
 func TestPostUrlWithHeadersResponse(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerHeaderInResponse))
 	defer ts.Close()
 
-	resp, _ := PostURL(ts.URL, nil, nil)
-	if resp.Headers.Get("X-PowOfTwo") != "4" {
-		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-PowOfTwo"), "4")
+	resp, _ := httpclient.PostURL(ts.URL, nil, nil)
+	if resp.Headers.Get("X-Powoftwo") != "4" {
+		t.Errorf("TestCallWithDelay was incorrect, got: %s, want: %s.", resp.Headers.Get("X-Powoftwo"), "4")
 	}
 }
 
 // TestNewClientNil verifies that NewClient(nil) returns a working client.
 func TestNewClientNil(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
 	defer ts.Close()
 
-	client := NewClient(nil)
+	client := httpclient.NewClient(nil)
+
 	resp, err := client.GetURL(ts.URL, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Status.Code != 200 {
-		t.Errorf("got status %d, want 200", resp.Status.Code)
+
+	if resp.Status.Code != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.Status.Code, http.StatusOK)
 	}
 }
 
 // TestNewClientCustomDoer verifies that a custom HTTPDoer is actually used.
 func TestNewClientCustomDoer(t *testing.T) {
+	t.Parallel()
+
 	rec := httptest.NewRecorder()
 	fmt.Fprint(rec, `{"injected":true}`)
+
 	doer := &mockDoer{resp: &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Status:     "200 OK",
 		Header:     http.Header{"X-Custom": []string{"yes"}},
 		Body:       rec.Result().Body,
 	}}
 
-	client := NewClient(doer)
+	client := httpclient.NewClient(doer)
+
 	resp, err := client.GetURL("http://example.com", map[string]string{"Authorization": "Bearer token"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if doer.got == nil {
 		t.Fatal("custom doer was not called")
 	}
+
 	if doer.got.Header.Get("Authorization") != "Bearer token" {
 		t.Errorf("header not forwarded, got: %s", doer.got.Header.Get("Authorization"))
 	}
+
 	if resp.Headers.Get("X-Custom") != "yes" {
 		t.Errorf("response header not returned, got: %s", resp.Headers.Get("X-Custom"))
 	}
@@ -217,26 +257,30 @@ func TestNewClientCustomDoer(t *testing.T) {
 
 // TestClientGetURL tests Client.GetURL against a real test server.
 func TestClientGetURL(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
 	defer ts.Close()
 
-	client := NewClient(nil)
+	client := httpclient.NewClient(nil)
+
 	resp, _ := client.GetURL(ts.URL, nil)
-	r := "{\"data\": \"example data\"}"
-	if string(resp.Body) != r && resp.Status.Code == 200 {
-		t.Errorf("got: %s, want: %v.", resp.Body, r)
+	if string(resp.Body) != exampleData && resp.Status.Code == http.StatusOK {
+		t.Errorf("got: %s, want: %v.", resp.Body, exampleData)
 	}
 }
 
 // TestClientPostURL tests Client.PostURL against a real test server.
 func TestClientPostURL(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
 	defer ts.Close()
 
-	client := NewClient(nil)
+	client := httpclient.NewClient(nil)
+
 	resp, _ := client.PostURL(ts.URL, nil, nil)
-	r := "{\"data\": \"example data\"}"
-	if string(resp.Body) != r && resp.Status.Code == 200 {
-		t.Errorf("got: %s, want: %v.", resp.Body, r)
+	if string(resp.Body) != exampleData && resp.Status.Code == http.StatusOK {
+		t.Errorf("got: %s, want: %v.", resp.Body, exampleData)
 	}
 }
