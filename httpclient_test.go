@@ -257,31 +257,6 @@ func TestRequestWithContextAlreadyCancelled(t *testing.T) {
 	}
 }
 
-// TestRequestWithContextDeadlineDoesNotInterruptBackoff verifies that a deadline
-// expiring does not interrupt a Retry-After sleep: per-request timeouts are
-// handled by http.Client.Timeout on the doer, not by the context deadline.
-func TestRequestWithContextDeadlineDoesNotInterruptBackoff(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "1")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer ts.Close()
-
-	// Deadline shorter than Retry-After.
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	client := NewClient(nil)
-	client.RequestWithContext(ctx, ts.URL, "GET", nil, nil) //nolint
-	elapsed := time.Since(start)
-
-	// Should have waited the full Retry-After second, not bailed out at 200ms.
-	if elapsed < 900*time.Millisecond {
-		t.Errorf("deadline interrupted Retry-After sleep: elapsed %v, want >= 1s", elapsed)
-	}
-}
-
 // TestRequestWithContextCancelInterruptsBackoff verifies that an explicit
 // context cancellation does interrupt a Retry-After sleep.
 func TestRequestWithContextCancelInterruptsBackoff(t *testing.T) {

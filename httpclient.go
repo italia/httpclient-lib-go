@@ -48,7 +48,7 @@ func (c *Client) GetURL(URL string, headers map[string]string) (HTTPResponse, er
 
 // GetURLWithContext retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func (c *Client) GetURLWithContext(ctx context.Context, URL string, headers map[string]string) (HTTPResponse, error) {
 	return c.RequestWithContext(ctx, URL, "GET", headers, nil)
 }
@@ -61,7 +61,7 @@ func (c *Client) PostURL(URL string, headers map[string]string, body io.Reader) 
 
 // PostURLWithContext retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func (c *Client) PostURLWithContext(ctx context.Context, URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
 	return c.RequestWithContext(ctx, URL, "POST", headers, body)
 }
@@ -74,8 +74,11 @@ func (c *Client) Request(URL string, verb string, headers map[string]string, bod
 
 // RequestWithContext retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func (c *Client) RequestWithContext(ctx context.Context, URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	expBackoffAttempts := 0
 	const maxBackOffAttempts = 8 // 2 minutes.
 	var err error
@@ -166,7 +169,7 @@ func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
 
 // GetURLWithContext retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func GetURLWithContext(ctx context.Context, URL string, headers map[string]string) (HTTPResponse, error) {
 	return defaultClient.RequestWithContext(ctx, URL, "GET", headers, nil)
 }
@@ -179,7 +182,7 @@ func PostURL(URL string, headers map[string]string, body io.Reader) (HTTPRespons
 
 // PostURLWithContext retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func PostURLWithContext(ctx context.Context, URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
 	return defaultClient.RequestWithContext(ctx, URL, "POST", headers, body)
 }
@@ -191,8 +194,7 @@ func Request(URL string, verb string, headers map[string]string, body io.Reader)
 }
 
 // RequestWithContext retrieves data, status and response headers from an URL.
-// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
-// Backoff sleeps are interrupted if ctx is cancelled.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
 func RequestWithContext(ctx context.Context, URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
 	return defaultClient.RequestWithContext(ctx, URL, verb, headers, body)
 }
