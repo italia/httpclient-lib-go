@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"io"
 	"math"
 	"net/http"
@@ -29,7 +30,7 @@ func NewClient(doer HTTPDoer) *Client {
 	return &Client{httpDoer: doer}
 }
 
-// defaultClient is used by the package-level functions for backwards compatibility.
+// defaultClient is used by the package-level functions for backward compatibility.
 var defaultClient = NewClient(nil)
 
 // HTTPResponse wraps body, Status and Headers from the http.Response.
@@ -42,25 +43,49 @@ type HTTPResponse struct {
 // GetURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func (c *Client) GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
-	return c.Request(URL, "GET", headers, nil)
+	return c.RequestWithContext(context.Background(), URL, "GET", headers, nil)
+}
+
+// GetURLWithContext retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func (c *Client) GetURLWithContext(ctx context.Context, URL string, headers map[string]string) (HTTPResponse, error) {
+	return c.RequestWithContext(ctx, URL, "GET", headers, nil)
 }
 
 // PostURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func (c *Client) PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
-	return c.Request(URL, "POST", headers, body)
+	return c.RequestWithContext(context.Background(), URL, "POST", headers, body)
+}
+
+// PostURLWithContext retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func (c *Client) PostURLWithContext(ctx context.Context, URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return c.RequestWithContext(ctx, URL, "POST", headers, body)
 }
 
 // Request retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func (c *Client) Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return c.RequestWithContext(context.Background(), URL, verb, headers, body)
+}
+
+// RequestWithContext retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func (c *Client) RequestWithContext(ctx context.Context, URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	expBackoffAttempts := 0
 	const maxBackOffAttempts = 8 // 2 minutes.
 	var err error
 
 	for expBackoffAttempts < maxBackOffAttempts {
 
-		req, err := http.NewRequest(verb, URL, body)
+		req, err := http.NewRequestWithContext(ctx, verb, URL, body)
 		if err != nil {
 			return HTTPResponse{
 				Body:    nil,
@@ -102,7 +127,7 @@ func (c *Client) Request(URL string, verb string, headers map[string]string, bod
 		// Check if the request results in http RateLimit error.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			log.Debugf("Status: %s - Resource: %s", resp.Status, URL)
-			expBackoffAttempts, err = statusTooManyRequests(resp, expBackoffAttempts)
+			expBackoffAttempts, err = statusTooManyRequests(ctx, resp, expBackoffAttempts)
 			if err != nil {
 				return HTTPResponse{
 					Body:    nil,
@@ -115,7 +140,7 @@ func (c *Client) Request(URL string, verb string, headers map[string]string, bod
 		// Check if the request result in http Forbidden status.
 		if resp.StatusCode == http.StatusForbidden {
 			log.Debugf("Status: %s - Resource: %s", resp.Status, URL)
-			expBackoffAttempts, err = statusForbidden(resp, expBackoffAttempts)
+			expBackoffAttempts, err = statusForbidden(ctx, resp, expBackoffAttempts)
 			if err != nil {
 				return HTTPResponse{
 					Body:    nil,
@@ -139,22 +164,42 @@ func (c *Client) Request(URL string, verb string, headers map[string]string, bod
 // GetURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func GetURL(URL string, headers map[string]string) (HTTPResponse, error) {
-	return defaultClient.Request(URL, "GET", headers, nil)
+	return defaultClient.RequestWithContext(context.Background(), URL, "GET", headers, nil)
+}
+
+// GetURLWithContext retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func GetURLWithContext(ctx context.Context, URL string, headers map[string]string) (HTTPResponse, error) {
+	return defaultClient.RequestWithContext(ctx, URL, "GET", headers, nil)
 }
 
 // PostURL retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func PostURL(URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
-	return defaultClient.Request(URL, "POST", headers, body)
+	return defaultClient.RequestWithContext(context.Background(), URL, "POST", headers, body)
+}
+
+// PostURLWithContext retrieves data, status and response headers from an URL.
+// It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func PostURLWithContext(ctx context.Context, URL string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return defaultClient.RequestWithContext(ctx, URL, "POST", headers, body)
 }
 
 // Request retrieves data, status and response headers from an URL.
 // It uses some technique to slow down the requests if it get a 429 (Too Many Requests) response.
 func Request(URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
-	return defaultClient.Request(URL, verb, headers, body)
+	return defaultClient.RequestWithContext(context.Background(), URL, verb, headers, body)
 }
 
-// HeaderLink parse the Github Header Link to "next"/"last"/"first"/"prev" link of repositories.
+// RequestWithContext retrieves data, status and response headers from an URL.
+// Retry waits stop when ctx is cancelled or reaches its deadline.
+func RequestWithContext(ctx context.Context, URL string, verb string, headers map[string]string, body io.Reader) (HTTPResponse, error) {
+	return defaultClient.RequestWithContext(ctx, URL, verb, headers, body)
+}
+
+// HeaderLink parse the GitHub Header Link to "next"/"last"/"first"/"prev" link of repositories.
 // Example: HeaderLink(link,"next") or HeaderLink(link, "prev") or HeaderLink(link,"last").
 func HeaderLink(linkHeader, command string) string {
 	parsedLinks := linkheader.Parse(linkHeader)

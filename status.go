@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -21,6 +22,73 @@ const (
 	headerRateReset     = "X-RateLimit-Reset"
 	headerRateRemaining = "X-RateLimit-Remaining"
 )
+
+const maxRetryWait = 30 * time.Second
+
+func parseRetryAfter(value string, now time.Time) (time.Duration, error) {
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err == nil {
+		if seconds < 0 {
+			return 0, fmt.Errorf("negative %s value %q", headerRetryAfter, value)
+		}
+		if seconds >= int64(maxRetryWait/time.Second) {
+			return maxRetryWait, nil
+		}
+
+		return time.Duration(seconds) * time.Second, nil
+	}
+
+	retryAt, err := http.ParseTime(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q", headerRetryAfter, value)
+	}
+	if !retryAt.After(now) {
+		return 0, nil
+	}
+
+	return capRetryWait(retryAt.Sub(now)), nil
+}
+
+func parseRateLimitReset(value string, now time.Time) (time.Duration, error) {
+	reset, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q", headerRateReset, value)
+	}
+
+	waitSeconds := reset - now.Unix()
+	if waitSeconds <= 0 {
+		return 0, nil
+	}
+	if waitSeconds >= int64(maxRetryWait/time.Second) {
+		return maxRetryWait, nil
+	}
+
+	return time.Duration(waitSeconds) * time.Second, nil
+}
+
+func capRetryWait(wait time.Duration) time.Duration {
+	if wait > maxRetryWait {
+		return maxRetryWait
+	}
+
+	return wait
+}
+
+func sleepWithContext(ctx context.Context, wait time.Duration) error {
+	if wait <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // statusOK returns an HTTPResponse with the data from response.
 func statusOK(resp *http.Response) (HTTPResponse, error) {
@@ -56,65 +124,73 @@ func statusNotFound(resp *http.Response) (HTTPResponse, error) {
 }
 
 // statusTooManyRequests returns an HTTPResponse with the data from response.
-func statusTooManyRequests(resp *http.Response, expBackoffAttempts int) (int, error) {
+func statusTooManyRequests(ctx context.Context, resp *http.Response, expBackoffAttempts int) (int, error) {
 	// If Retry-after Header is set, use the header value.
 	if retryAfter := resp.Header.Get(headerRetryAfter); retryAfter != "" {
-		log.Infof("Waiting: %s seconds. (The value of %s)", retryAfter, headerRetryAfter)
-		secondsAfterRetry, err := strconv.Atoi(retryAfter)
-		if err != nil {
-			log.Warn(err)
+		wait, err := parseRetryAfter(retryAfter, time.Now())
+		if err == nil {
+			log.Infof("Waiting: %s. (The value of %s)", wait, headerRetryAfter)
+			if err = sleepWithContext(ctx, wait); err != nil {
+				return expBackoffAttempts, err
+			}
+
+			return expBackoffAttempts, nil
 		}
-		time.Sleep(time.Second * time.Duration(secondsAfterRetry))
-		return expBackoffAttempts, nil
+		log.Warn(err)
 	}
+
 	// Calculate ExpBackoff
 	expBackoffWait := expBackoffCalc(expBackoffAttempts)
 	// Perform a backoff sleep time.
-	sleep := time.Duration(expBackoffWait) * time.Second
+	sleep := capRetryWait(time.Duration(expBackoffWait) * time.Second)
 	log.Infof("Rate limit reached, sleep %v \n", sleep)
-	time.Sleep(sleep)
+	if err := sleepWithContext(ctx, sleep); err != nil {
+		return expBackoffAttempts, err
+	}
 
 	return expBackoffAttempts + 1, nil
 }
 
 // statusForbidden returns an HTTPResponse with the data from response.
-func statusForbidden(resp *http.Response, expBackoffAttempts int) (int, error) {
+func statusForbidden(ctx context.Context, resp *http.Response, expBackoffAttempts int) (int, error) {
 	// If Retry-after is set, use that value.
 	if retryAfter := resp.Header.Get(headerRetryAfter); retryAfter != "" {
-		log.Infof("Waiting: %s seconds. (The value of %s)", retryAfter, headerRetryAfter)
-		secondsAfterRetry, err := strconv.Atoi(retryAfter)
+		wait, err := parseRetryAfter(retryAfter, time.Now())
 		if err != nil {
-			log.Warn(err)
+			return expBackoffAttempts, err
 		}
-		time.Sleep(time.Second * time.Duration(secondsAfterRetry))
+		log.Infof("Waiting: %s. (The value of %s)", wait, headerRetryAfter)
+		if err = sleepWithContext(ctx, wait); err != nil {
+			return expBackoffAttempts, err
+		}
 		return expBackoffAttempts, nil
 	}
 
 	// If X-rateLimit-remaining
 	if reset := resp.Header.Get(headerRateReset); reset != "" {
 		// If X-RateLimit-Remaining is set
-		if remaining := resp.Header.Get(headerRateRemaining); reset != "" {
+		if remaining := resp.Header.Get(headerRateRemaining); remaining != "" {
 			rateRemaining, err := strconv.Atoi(remaining)
 			if err != nil {
-				log.Warn(err)
+				return expBackoffAttempts, err
 			}
 			if rateRemaining != 0 {
 				// In this case there is another StatusForbidden and i should skip.
 				return expBackoffAttempts, fmt.Errorf("forbidden resource")
 			}
 
-			retryEpoch, err := strconv.Atoi(reset)
+			wait, err := parseRateLimitReset(reset, time.Now())
 			if err != nil {
-				log.Warn(err)
+				return expBackoffAttempts, err
 			}
-			secondsAfterRetry := int64(retryEpoch) - time.Now().Unix()
-			log.Infof("Waiting %s seconds for %s. (The difference between header %s and time.Now())", strconv.FormatInt(secondsAfterRetry, 10), headerRateReset, reset)
-			time.Sleep(time.Second * time.Duration(secondsAfterRetry))
+			log.Infof("Waiting %s for %s. (The difference between header %s and time.Now())", wait, headerRateReset, reset)
+			if err = sleepWithContext(ctx, wait); err != nil {
+				return expBackoffAttempts, err
+			}
 			return expBackoffAttempts, nil
 		}
 	}
 
 	// Generic forbidden.
 	return expBackoffAttempts, fmt.Errorf("forbidden resource")
-
 }

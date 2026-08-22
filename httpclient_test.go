@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -238,5 +239,48 @@ func TestClientPostURL(t *testing.T) {
 	r := "{\"data\": \"example data\"}"
 	if string(resp.Body) != r && resp.Status.Code == 200 {
 		t.Errorf("got: %s, want: %v.", resp.Body, r)
+	}
+}
+
+// TestRequestWithContextAlreadyCancelled verifies that a pre-cancelled context returns immediately.
+func TestRequestWithContextAlreadyCancelled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(handlerOneRepoList))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := NewClient(nil)
+	_, err := client.RequestWithContext(ctx, ts.URL, "GET", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+// TestRequestWithContextCancelInterruptsBackoff verifies that an explicit
+// context cancellation does interrupt a Retry-After sleep.
+func TestRequestWithContextCancelInterruptsBackoff(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	client := NewClient(nil)
+	_, err := client.RequestWithContext(ctx, ts.URL, "GET", nil, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if elapsed >= 5*time.Second {
+		t.Errorf("cancel did not interrupt backoff: elapsed %v", elapsed)
 	}
 }
